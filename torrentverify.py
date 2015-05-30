@@ -3,7 +3,8 @@
 import io
 import sys
 import os
-from bencodepy import decode
+import hashlib
+import bencodepy
 
 # Unified torrent information object. Works for torrent files with 1 or several
 # files.
@@ -37,9 +38,9 @@ def extract_torrent_metadata(filename):
 
   sys.stdout.write('Bdecoding torrent file {0}... '.format(torrentFileName))
   sys.stdout.flush()
-  torr_ordered_dict = decode(torrent_file.read())
+  torr_ordered_dict = bencodepy.decode(torrent_file.read())
   info_ordered_dict = torr_ordered_dict[b'info']
-  sys.stdout.write('done\n\n')
+  sys.stdout.write('done\n')
 
   if __debug_torrent_extract_metadata:
     print('=== Dumping torrent root ===')
@@ -77,6 +78,7 @@ def extract_torrent_metadata(filename):
     torrent.total_bytes = 0
     for t_file in t_files_list:
       torrent.file_name_list.append(join_file_byte_list(t_file[b'path']))
+      # print(type(t_file[b'length'])) # type is <class 'int'>
       torrent.file_length_list.append(t_file[b'length'])
       torrent.total_bytes += t_file[b'length']
 
@@ -138,27 +140,31 @@ def list_torrent_contents(torrent_obj):
   print('    F#            Bytes  File name')
   print('------ ----------------  --------------')
   for i in range(len(torrent_obj.file_name_list)):
-    print('{0:6} {1:16,}  {2}'.format(i+1, torrent_obj.file_length_list[i], torrent_obj.file_name_list[i]))
+    print('{0:6} {1:16,}  {2}'
+      .format(i+1, torrent_obj.file_length_list[i], torrent_obj.file_name_list[i]))
 
   # --- Print torrent metadata
   print('')
   print('Torrent file      : {0}'.format(torrent_obj.torrent_file))
   print('Torrent directory : {0}'.format(torrent_obj.dir_name))
-  print('Pieces info       : {0:10,} pieces, {1:16,} bytes/piece'.format(torrent_obj.num_pieces, torrent_obj.piece_length))
-  print('Files info        : {0:10,} files,  {1:16,} total bytes'.format(torrent_obj.num_files, torrent_obj.total_bytes))
+  print('Pieces info       : {0:10,} pieces, {1:16,} bytes/piece'
+    .format(torrent_obj.num_pieces, torrent_obj.piece_length))
+  print('Files info        : {0:10,} files,  {1:16,} total bytes'
+    .format(torrent_obj.num_files, torrent_obj.total_bytes))
   # print('Torrent comment  : {0}'.format(torrent.comment))
 
 # Checks that files listed in the torrent file exist, and that file size
 # is correct
 # Status can be: OK, MISSING, BAD_SIZE
 def check_torrent_files_only(data_directory, torrent_obj):
+  print('Checking torrent files and sizes (NOT hash)')
   num_files_OK = 0
   num_files_bad_size = 0
   num_files_missing = 0
-  print('Checking torrent files and sizes (NOT hash)')
-  print('    F#   Status            Bytes  File name')
-  print('------ -------- ----------------  --------------')
+  print('    F#   Status     Actual Bytes    Torrent Bytes  File name')
+  print('------ -------- ---------------- ----------------  --------------')
   for i in range(len(torrent_obj.file_name_list)):
+    file_size = -1
     filename_path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[i])
     # print(filename_path)
     file_exists = os.path.isfile(filename_path)
@@ -173,14 +179,19 @@ def check_torrent_files_only(data_directory, torrent_obj):
     else:
       status = 'MISSING'
       num_files_missing += 1
-    print('{0:6} {1:>8} {2:16,} {3:16,} {4}'.format(i+1, status, file_size, torrent_obj.file_length_list[i], torrent_obj.file_name_list[i]))  
+    print('{0:6} {1:>8} {2:16,} {3:16,}  {4}'
+      .format(i+1, status, file_size, torrent_obj.file_length_list[i], torrent_obj.file_name_list[i]))
+    
+    # Delete files with bad size... to they can be downloaded again
+    if status == 'BAD_SIZE':
+      os.unlink(filename_path)
 
   # --- Print torrent metadata
   print('')
   print('Torrent file      : {0}'.format(torrent_obj.torrent_file))
-  print('Torrent directory : {0}'.format(torrent_obj.dir_name))
   print('Pieces info       : {0:10,} pieces, {1:16,} bytes/piece'.format(torrent_obj.num_pieces, torrent_obj.piece_length))
   print('Files info        : {0:10,} files,  {1:16,} total bytes'.format(torrent_obj.num_files, torrent_obj.total_bytes))
+  print('Torrent directory : {0}'.format(torrent_obj.dir_name))
   print('Data directory    : {0}'.format(data_directory))
   print('Files OK          : {0:,}'.format(num_files_OK))
   print('Files bad size    : {0:,}'.format(num_files_bad_size))
@@ -188,6 +199,8 @@ def check_torrent_files_only(data_directory, torrent_obj):
 
 # Lists torrent unneeded files
 def list_torrent_unneeded_files(data_directory, torrent_obj):
+  print('Listing torrent unneeded files')
+
   # --- Make a recursive list of files in torrent data directory
   torrent_directory = os.path.join(data_directory, torrent_obj.dir_name)
   file_list = []
@@ -207,15 +220,21 @@ def list_torrent_unneeded_files(data_directory, torrent_obj):
     torrent_file_list.append(filename_path);
   torrent_file_set = set(torrent_file_list)
 
+  # Check number of elements in list and set are the same. This means there are no
+  # duplicate files in the list
+  if len(torrent_file_list) != len(torrent_file_set):
+    print('len(torrent_file_list) != len(torrent_file_set)')
+    exit(1)
+
   # --- Check if files in the torrent directory are on the metadata file set
   num_needed = 0
   num_redundant = 0
   for i in range(len(file_list)):
     if file_list[i] not in torrent_file_set:
-      print('UNNEEDED {0}'.format(file_list[i]))
+      print('UNNEEDED  {0}'.format(file_list[i]))
       num_redundant += 1
     else:
-      print('      OK {0}'.format(file_list[i]))
+      print('      OK  {0}'.format(file_list[i]))
       num_needed += 1
     
   print('Files in torrent data directory : {0:,}'.format(len(file_list)))
@@ -225,11 +244,103 @@ def list_torrent_unneeded_files(data_directory, torrent_obj):
 
 # Removes unneeded files from torrent download directory
 def delete_torrent_unneeded_files(data_directory, torrent_obj):
-  pass
+  print('Removing torrent unneeded files')
+
+  # --- Make a recursive list of files in torrent data directory
+  torrent_directory = os.path.join(data_directory, torrent_obj.dir_name)
+  file_list = []
+  for root, dirs, files in os.walk(torrent_directory, topdown=False):
+    for name in files:
+      file_list.append(os.path.join(root, name))
+      
+  # --- Make a set of files in the list of torrent metadata files
+  torrent_file_list = []
+  for i in range(len(torrent_obj.file_name_list)):
+    filename_path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[i])
+    torrent_file_list.append(filename_path);
+  torrent_file_set = set(torrent_file_list)
+  # Check number of elements in list and set are the same. This means there are no
+  # duplicate files in the list
+  if len(torrent_file_list) != len(torrent_file_set):
+    print('len(torrent_file_list) != len(torrent_file_set)')
+    exit(1)
+
+  # --- Check if files in the torrent directory are on the metadata file set
+  num_needed = 0
+  num_redundant = 0
+  for i in range(len(file_list)):
+    if file_list[i] not in torrent_file_set:
+      print('UNNEEDED  {0}'.format(file_list[i]))
+      num_redundant += 1
+      # Delete unneeded file
+      print('      RM  {0}'.format(file_list[i]))
+      os.unlink(file_list[i])
+    else:
+      # Do not list needed files
+      num_needed += 1
+    
+  print('Files in torrent data directory : {0:,}'.format(len(file_list)))
+  print('Files in torrent                : {0:,}'.format(len(torrent_file_list)))
+  print('Needed                          : {0:,}'.format(num_needed))
+  print('Unneeded                        : {0:,}'.format(num_redundant))
+
+def pieces_generator(data_directory, torrent):
+  """Yield pieces from download file(s)."""
+  piece_length = torrent.piece_length
+  
+  # yield pieces from a multi-file torrent
+  if torrent.num_files > 1:
+    piece = b''
+    # Iterate through all files
+    for i in range(len(torrent_obj.file_name_list)):
+      path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[i])
+      print('Reading file: {0}'.format(path))
+      sfile = open(path, "rb")
+      while True:
+        piece += sfile.read(piece_length-len(piece))
+        if len(piece) != piece_length:
+          sfile.close()
+          break
+        print('yielding piece')
+        yield piece
+        piece = b''
+    if piece != b'':
+      print('yielding (last?) piece')
+      yield piece
+
+  # yield pieces from a single file torrent
+  else:
+    path = info['name']
+    print(path)
+    sfile = open(path.decode('UTF-8'), "rb")
+    while True:
+      piece = sfile.read(piece_length)
+      if not piece:
+        sfile.close()
+        return
+      yield piece
+
+def corruption_failure():
+    """Display error message and exit"""
+    print("download corrupted")
+    exit(1)
 
 # Checks torrent files against SHA1 hash for integrity
 def check_torrent_files_hash(data_directory, torrent_obj):
-  pass
+  
+  # --- Iterate through pieces
+  piece_index = 0
+  for piece in pieces_generator(data_directory, torrent_obj):
+    print('Checking piece {0}'.format(piece_index))
+    
+    # Compare piece hash with expected hash
+    piece_hash = hashlib.sha1(piece).digest()
+    if piece_hash != torrent_obj.pieces_hash_list[piece_index]:
+      corruption_failure()
+    piece_index += 1
+
+  # ensure we've read all pieces
+  print('Checked {0} pieces out of {1}'.format(piece_index, torrent_obj.num_pieces))
 
 # --- Main --------------------------------------------------------------------
 data_directory = '/home/mendi/Data/temp-KTorrent/'
@@ -250,7 +361,6 @@ torrent_obj = extract_torrent_metadata(torrentFileName)
 check_torrent_files_only(data_directory, torrent_obj)
 
 # list_torrent_unneeded_files(data_directory, torrent_obj)
-
 # delete_torrent_unneeded_files(data_directory, torrent_obj)
 
 # check_torrent_files_hash(data_directory, torrent_obj)
