@@ -173,7 +173,7 @@ def check_torrent_files_only(data_directory, torrent_obj):
     else:
       status = 'MISSING'
       num_files_missing += 1
-    print('{0:6} {1:>8} {2:16,} {3}'.format(i+1, status, torrent_obj.file_length_list[i], torrent_obj.file_name_list[i]))  
+    print('{0:6} {1:>8} {2:16,} {3:16,} {4}'.format(i+1, status, file_size, torrent_obj.file_length_list[i], torrent_obj.file_name_list[i]))  
 
   # --- Print torrent metadata
   print('')
@@ -188,7 +188,40 @@ def check_torrent_files_only(data_directory, torrent_obj):
 
 # Lists torrent unneeded files
 def list_torrent_unneeded_files(data_directory, torrent_obj):
-  pass
+  # --- Make a recursive list of files in torrent data directory
+  torrent_directory = os.path.join(data_directory, torrent_obj.dir_name)
+  file_list = []
+  for root, dirs, files in os.walk(torrent_directory, topdown=False):
+    for name in files:
+      file_list.append(os.path.join(root, name))
+      # print(name)
+    # for name in dirs:
+      # print(os.path.join(root, name))
+      # print(name)
+      
+  # --- Make a set of files in the list of torrent metadata files
+  torrent_file_list = []
+  for i in range(len(torrent_obj.file_name_list)):
+    filename_path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[i])
+    # print(filename_path)
+    torrent_file_list.append(filename_path);
+  torrent_file_set = set(torrent_file_list)
+
+  # --- Check if files in the torrent directory are on the metadata file set
+  num_needed = 0
+  num_redundant = 0
+  for i in range(len(file_list)):
+    if file_list[i] not in torrent_file_set:
+      print('UNNEEDED {0}'.format(file_list[i]))
+      num_redundant += 1
+    else:
+      print('      OK {0}'.format(file_list[i]))
+      num_needed += 1
+    
+  print('Files in torrent data directory : {0:,}'.format(len(file_list)))
+  print('Files in torrent                : {0:,}'.format(len(torrent_file_list)))
+  print('Needed                          : {0:,}'.format(num_needed))
+  print('Unneeded                        : {0:,}'.format(num_redundant))
 
 # Removes unneeded files from torrent download directory
 def delete_torrent_unneeded_files(data_directory, torrent_obj):
@@ -203,8 +236,9 @@ data_directory = '/home/mendi/Data/temp-KTorrent/'
 
 # torrentFileName = 'MAME Guide V1.torrent'
 # torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
-torrentFileName = 'MAME 0.162 Software List ROMs (TZ-Split).torrent'
+# torrentFileName = 'MAME 0.162 Software List ROMs (TZ-Split).torrent'
 # torrentFileName = 'No Intro (2015-02-16).torrent'
+torrentFileName = 'MAME 0.162 ROMs (Torrentzipped-split).torrent'
 # torrentFileName = 'Vogt, A. E. van -  El viaje.torrent'
 
 # --- Extrant torrent metadata
@@ -215,7 +249,7 @@ torrent_obj = extract_torrent_metadata(torrentFileName)
 
 check_torrent_files_only(data_directory, torrent_obj)
 
-list_torrent_unneeded_files(data_directory, torrent_obj)
+# list_torrent_unneeded_files(data_directory, torrent_obj)
 
 # delete_torrent_unneeded_files(data_directory, torrent_obj)
 
