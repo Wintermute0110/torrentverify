@@ -290,49 +290,37 @@ def pieces_generator(data_directory, torrent):
   """Yield pieces from download file(s)."""
   piece_length = torrent.piece_length
   
-  print('P#         F#  FStatus     Actual Bytes    Torrent Bytes  File name')
-  print('------ ------ -------- ---------------- ----------------  --------------')
-  
   # yield pieces from a multi-file torrent
   # Iterator finishes when function exits but not with the yield keyword
   if torrent.num_files > 1:
     piece = b''
-    # Iterate through all files
-    pieces_counter = 1
+    file_idx_list = []
+    # --- Iterate through all files
     # print('{0:6d}'.format(pieces_counter))
     for i in range(len(torrent_obj.file_name_list)):
       path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[i])
 
-      # --- Print information about file
-      file_exists = os.path.isfile(path)
-      if file_exists:
-        file_size = os.path.getsize(path)
-        if file_size == torrent_obj.file_length_list[i]:
-          status = 'OK'
-        else:
-          status = 'BAD_SIZE'
-      else:
-        status = 'MISSING'
-      print('{0:6d} {1:6} {2:>8} {3:16,} {4:16,}  {5}'
-        .format(pieces_counter, i+1, status, file_size, torrent.file_length_list[i], torrent.file_name_list[i]))     
+      # CHECK file
+      # If file does not exist then bogus should be created for checksum calculation. Otherwise,
+      # all files after a non-existant file will have bad checksum
+      # Same situation when file size is not correct
 
       # --- Read file
       sfile = open(path, "rb")
+      file_idx_list.append(i)
       while True:
         piece += sfile.read(piece_length-len(piece))
         if len(piece) != piece_length:
           sfile.close()
           break
-        # print('yielding piece')
-        yield piece
+        yield (piece, file_idx_list)
         # --- Go for another piece
-        pieces_counter += 1
-        print('{0:6d} {1:6} {2:>8} {3:16,} {4:16,}  {5}'
-          .format(pieces_counter, i+1, status, file_size, torrent.file_length_list[i], torrent.file_name_list[i]))     
         piece = b''
+        file_idx_list = []
+        file_idx_list.append(i)
     if piece != b'':
       # print('yielding (last?) piece')
-      yield piece
+      yield (piece, file_idx_list)
 
   # yield pieces from a single file torrent
   else:
@@ -348,19 +336,54 @@ def pieces_generator(data_directory, torrent):
 
 # Checks torrent files against SHA1 hash for integrity
 def check_torrent_files_hash(data_directory, torrent_obj):
+  print('    P#     F#  HStatus  FStatus     Actual Bytes    Torrent Bytes  File name')
+  print('------ ------ -------- -------- ---------------- ----------------  --------------')
   
   # --- Iterate through pieces
   piece_index = 0
-  for piece in pieces_generator(data_directory, torrent_obj):
-    # Compare piece hash with expected hash
+  good_pieces = 0
+  bad_pieces = 0
+  for piece, file_idx_list in pieces_generator(data_directory, torrent_obj):
+    # --- Compare piece hash with expected hash
     piece_hash = hashlib.sha1(piece).digest()
     if piece_hash != torrent_obj.pieces_hash_list[piece_index]:
-      print("download corrupted")
-      exit(1)
+      piece_sha1_OK = 0
+      bad_pieces += 1
+    else:
+      piece_sha1_OK = 1
+      good_pieces += 1
+
+    # --- Print information
+    for i in range(len(file_idx_list)):
+      if piece_sha1_OK:
+        hash_status = 'SHA1 OK'
+      else:
+        hash_status = 'SHA1 BAD'
+      file_idx = file_idx_list[i]
+      path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[file_idx])
+      file_exists = os.path.isfile(path)
+      if file_exists:
+        file_size = os.path.getsize(path)
+        if file_size == torrent_obj.file_length_list[file_idx]:
+          file_status = 'OK'
+        else:
+          file_status = 'BAD_SIZE'
+      else:
+        file_status = 'MISSING'
+      print('{0:6d} {1:6} {2:>8} {3:>8} {4:16,} {5:16,}  {6}'
+        .format(piece_index+1, file_idx+1, hash_status, file_status, file_size,
+                torrent_obj.file_length_list[file_idx], torrent_obj.file_name_list[file_idx]))
+    # stop for DEBUG
+    # if not piece_sha1_OK:
+    #   print('Errors found. Exiting.')
+    #   exit(1)
+
+    # Increment piece counter
     piece_index += 1
 
   # ensure we've read all pieces
   print('Checked {0} pieces out of {1}'.format(piece_index, torrent_obj.num_pieces))
+  print('Good pieces {0} / Bad pieces {1}'.format(good_pieces, bad_pieces))
 
 # --- Main --------------------------------------------------------------------
 data_directory = '/home/mendi/Data/temp-KTorrent/'
