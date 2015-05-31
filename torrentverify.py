@@ -183,8 +183,10 @@ def check_torrent_files_only(data_directory, torrent_obj):
       .format(i+1, status, file_size, torrent_obj.file_length_list[i], torrent_obj.file_name_list[i]))
     
     # Delete files with bad size... to they can be downloaded again
-    if status == 'BAD_SIZE':
-      os.unlink(filename_path)
+    # WARNING may deleted useful files that can be recovered by truncating them to
+    #         the correct size.
+    # if status == 'BAD_SIZE':
+    #   os.unlink(filename_path)
 
   # --- Print torrent metadata
   print('')
@@ -288,24 +290,48 @@ def pieces_generator(data_directory, torrent):
   """Yield pieces from download file(s)."""
   piece_length = torrent.piece_length
   
+  print('P#         F#  FStatus     Actual Bytes    Torrent Bytes  File name')
+  print('------ ------ -------- ---------------- ----------------  --------------')
+  
   # yield pieces from a multi-file torrent
+  # Iterator finishes when function exits but not with the yield keyword
   if torrent.num_files > 1:
     piece = b''
     # Iterate through all files
+    pieces_counter = 1
+    # print('{0:6d}'.format(pieces_counter))
     for i in range(len(torrent_obj.file_name_list)):
       path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[i])
-      print('Reading file: {0}'.format(path))
+
+      # --- Print information about file
+      file_exists = os.path.isfile(path)
+      if file_exists:
+        file_size = os.path.getsize(path)
+        if file_size == torrent_obj.file_length_list[i]:
+          status = 'OK'
+        else:
+          status = 'BAD_SIZE'
+      else:
+        status = 'MISSING'
+      print('{0:6d} {1:6} {2:>8} {3:16,} {4:16,}  {5}'
+        .format(pieces_counter, i+1, status, file_size, torrent.file_length_list[i], torrent.file_name_list[i]))     
+
+      # --- Read file
       sfile = open(path, "rb")
       while True:
         piece += sfile.read(piece_length-len(piece))
         if len(piece) != piece_length:
           sfile.close()
           break
-        print('yielding piece')
+        # print('yielding piece')
         yield piece
+        # --- Go for another piece
+        pieces_counter += 1
+        print('{0:6d} {1:6} {2:>8} {3:16,} {4:16,}  {5}'
+          .format(pieces_counter, i+1, status, file_size, torrent.file_length_list[i], torrent.file_name_list[i]))     
         piece = b''
     if piece != b'':
-      print('yielding (last?) piece')
+      # print('yielding (last?) piece')
       yield piece
 
   # yield pieces from a single file torrent
@@ -320,23 +346,17 @@ def pieces_generator(data_directory, torrent):
         return
       yield piece
 
-def corruption_failure():
-    """Display error message and exit"""
-    print("download corrupted")
-    exit(1)
-
 # Checks torrent files against SHA1 hash for integrity
 def check_torrent_files_hash(data_directory, torrent_obj):
   
   # --- Iterate through pieces
   piece_index = 0
   for piece in pieces_generator(data_directory, torrent_obj):
-    print('Checking piece {0}'.format(piece_index))
-    
     # Compare piece hash with expected hash
     piece_hash = hashlib.sha1(piece).digest()
     if piece_hash != torrent_obj.pieces_hash_list[piece_index]:
-      corruption_failure()
+      print("download corrupted")
+      exit(1)
     piece_index += 1
 
   # ensure we've read all pieces
@@ -346,10 +366,10 @@ def check_torrent_files_hash(data_directory, torrent_obj):
 data_directory = '/home/mendi/Data/temp-KTorrent/'
 
 # torrentFileName = 'MAME Guide V1.torrent'
-# torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
+torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
 # torrentFileName = 'MAME 0.162 Software List ROMs (TZ-Split).torrent'
 # torrentFileName = 'No Intro (2015-02-16).torrent'
-torrentFileName = 'MAME 0.162 ROMs (Torrentzipped-split).torrent'
+# torrentFileName = 'MAME 0.162 ROMs (Torrentzipped-split).torrent'
 # torrentFileName = 'Vogt, A. E. van -  El viaje.torrent'
 
 # --- Extrant torrent metadata
@@ -358,9 +378,9 @@ torrent_obj = extract_torrent_metadata(torrentFileName)
 # --- Print info
 # list_torrent_contents(torrent_obj)
 
-check_torrent_files_only(data_directory, torrent_obj)
+# check_torrent_files_only(data_directory, torrent_obj)
 
 # list_torrent_unneeded_files(data_directory, torrent_obj)
 # delete_torrent_unneeded_files(data_directory, torrent_obj)
 
-# check_torrent_files_hash(data_directory, torrent_obj)
+check_torrent_files_hash(data_directory, torrent_obj)
