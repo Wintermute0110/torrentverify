@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 # Torrentverify
-
 # Copyright (c) 2015 Wintermute0110 <wintermute0110@gmail.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -33,7 +32,7 @@ __software_version = '0.1.0';
 
 # --- Program options (from command line)
 __prog_options_deleteWrongSizeFiles = 0
-__prog_options_chopWrongSizeFiles = 0
+__prog_options_truncateWrongSizeFiles = 0
 __prog_options_deleteUnneeded = 0
 
 # Unified torrent information object. Works for torrent files with 1 or several
@@ -48,11 +47,47 @@ class Torrent:
   file_length_list = []
   pieces_hash_list = []
 
+# --- Get size of terminal
 # https://docs.python.org/3/library/shutil.html#querying-the-size-of-the-output-terminal
 __cols, __lines = shutil.get_terminal_size()
-print('{0} cols and {1} lines'.format(__cols, __lines))
+# print('{0} cols and {1} lines'.format(__cols, __lines))
 
 # --- Functions ---------------------------------------------------------------
+def query_yes_no_all(question, default="no"):
+  """Ask a yes/no question via raw_input() and return their answer.
+
+  "question" is a string that is presented to the user.
+  "default" is the presumed answer if the user just hits <Enter>.
+      It must be "yes" (the default), "no" or None (meaning
+      an answer is required of the user).
+
+  The "answer" return value is True for "yes" or False for "no".
+  """
+  valid = {"yes": 1,  "y": 1, "ye": 1,
+           "no": 0,   "n": 0,
+           "all": -1, "a": -1}
+  if default is None:
+    prompt = " [y/n/a] "
+  elif default == "yes":
+    prompt = " [Y/n/a] "
+  elif default == "no":
+    prompt = " [y/N/a] "
+  elif default == "all":
+    prompt = " [y/n/A] "
+  else:
+    raise ValueError("invalid default answer: '%s'" % default)
+
+  while True:
+    sys.stdout.write(question + prompt)
+    choice = input().lower()
+    if default is not None and choice == '':
+      return valid[default]
+    elif choice in valid:
+      return valid[choice]
+    else:
+      sys.stdout.write("Please respond with 'yes', 'no' or 'all'"
+                       " (or 'y' or 'n' or 'a').\n")
+
 def limit_string_lentgh(string, max_length):
   if len(string) > max_length:
     string = (string[:max_length-1] + '*');
@@ -69,17 +104,15 @@ def join_file_byte_list(file_list_bytes):
 
   return '/'.join(file_list_string)
 
-# Returns a Torrent object
+# Returns a Torrent object with torrent metadata
 __debug_torrent_extract_metadata = 0
 def extract_torrent_metadata(filename):
   torrent = Torrent
   torrent.torrent_file = filename
   
-  # print('Opening torrent file {0}'.format(torrentFileName))
-  torrent_file = open(torrentFileName, "rb")
-
   sys.stdout.write('Bdecoding torrent file {0}... '.format(torrentFileName))
   sys.stdout.flush()
+  torrent_file = open(torrentFileName, "rb")
   torr_ordered_dict = bencodepy.decode(torrent_file.read())
   info_ordered_dict = torr_ordered_dict[b'info']
   sys.stdout.write('done\n')
@@ -133,9 +166,6 @@ def extract_torrent_metadata(filename):
       print(' len(t_pieces) =  {0}'.format(len(t_pieces)))
       print(' num_pieces * piece_length = {0}'.format(num_pieces * t_piece_length))
       print(' len(torrent.pieces_hash_list) = {0}'.format(len(torrent.pieces_hash_list)))
-      # print('File list')
-      # for t_file in t_files_list:
-      #   print(' path {0} length {1}'.format(t_file[b'path'], t_file[b'length']))
       
   # Single file torrent
   else:
@@ -264,6 +294,10 @@ def check_torrent_files_only(data_directory, torrent_obj):
   num_files_bigger_size = 0
   num_files_smaller_size = 0
   num_files_missing = 0
+  force_delete = False
+  force_truncate = False
+  num_deleted_files = 0
+  num_truncated_files = 0
   print('    F#   Status     Actual Bytes    Torrent Bytes  File name')
   print('------ -------- ---------------- ----------------  --------------')
   for i in range(len(torrent_obj.file_name_list)):
@@ -285,14 +319,66 @@ def check_torrent_files_only(data_directory, torrent_obj):
     else:
       status = 'MISSING'
       num_files_missing += 1
+
+    # --- Print file info
+    text_size = 7+9+17+17+1
     print('{0:6} {1:>8} {2:16,} {3:16,}  {4}'
-      .format(i+1, status, file_size, torrent_obj.file_length_list[i], torrent_obj.file_name_list[i]))
-    
-    # Delete files with bad size... to they can be downloaded again
-    # WARNING may deleted useful files that can be recovered by truncating them to
-    #         the correct size.
-    # if status == 'BAD_SIZE':
-    #   os.unlink(filename_path)
+      .format(i+1, status, file_size, torrent_obj.file_length_list[i],
+              limit_string_lentgh(torrent_obj.file_name_list[i], __cols -text_size)))
+
+    # --- Delete wrong size files (mutually exclusive with truncate)
+    if status == 'BAD_SIZE' and file_size != torrent_obj.file_length_list[i]:
+      if __prog_options_deleteWrongSizeFiles:
+        print('RM  {0}'.format(filename_path))
+        # This option is very dangerous if user writes the wrong directory
+        # Always confirm with user
+        delete_file = 0
+        if force_delete:
+          delete_file = 1
+        else:
+          result = query_yes_no_all('Delete this file?')
+          if result == 1:
+            delete_file = 1
+          elif result == 0:
+            delete_file = 0
+            print('File not deleted')
+          elif result == -1:
+            delete_file = 1
+            force_delete = True
+          else:
+            print('Logic error')
+        if delete_file:
+          os.unlink(file_list[i])
+          num_deleted_files += 1
+
+    # --- Truncate bigger size files
+    if status == 'BAD_SIZE' and file_size > torrent_obj.file_length_list[i]:
+      if __prog_options_truncateWrongSizeFiles:
+        print('TRUNCATE  {0}'.format(filename_path))
+        # This option is very dangerous if user writes the wrong directory
+        # Always confirm with user
+        truncate_file = 0
+        if force_truncate:
+          truncate_file = 1
+        else:
+          result = query_yes_no_all('Delete this file?')
+          if result == 1:
+            truncate_file = 1
+          elif result == 0:
+            truncate_file = 0
+            print('File not truncated')
+          elif result == -1:
+            truncate_file = 1
+            force_truncate = True
+          else:
+            print('Logic error')
+        if truncate_file:
+          # w+ mode truncates the file, but the file if filled with zeros!
+          # According to Python docs, r+ is for both read and writing, should work.
+          fo = open(filename_path, "r+b")
+          fo.truncate(torrent_obj.file_length_list[i])
+          fo.close()
+          num_truncated_files += 1
 
   # --- Print torrent metadata
   print('')
@@ -305,6 +391,10 @@ def check_torrent_files_only(data_directory, torrent_obj):
   print('Files w big size   : {0:,}'.format(num_files_bigger_size))
   print('Files w small size : {0:,}'.format(num_files_smaller_size))
   print('Files missing      : {0:,}'.format(num_files_missing))
+  if __prog_options_deleteWrongSizeFiles:
+    print('Deleted files      : {0:,}'.format(num_deleted_files))
+  if __prog_options_truncateWrongSizeFiles:
+    print('Truncated files    : {0:,}'.format(num_truncated_files))
 
 # Lists torrent unneeded files
 def list_torrent_unneeded_files(data_directory, torrent_obj):
@@ -316,10 +406,6 @@ def list_torrent_unneeded_files(data_directory, torrent_obj):
   for root, dirs, files in os.walk(torrent_directory, topdown=False):
     for name in files:
       file_list.append(os.path.join(root, name))
-      # print(name)
-    # for name in dirs:
-      # print(os.path.join(root, name))
-      # print(name)
       
   # --- Make a set of files in the list of torrent metadata files
   torrent_file_list = []
@@ -338,61 +424,53 @@ def list_torrent_unneeded_files(data_directory, torrent_obj):
   # --- Check if files in the torrent directory are on the metadata file set
   num_needed = 0
   num_redundant = 0
+  num_deleted_files = 0
+  force_delete = False
   for i in range(len(file_list)):
     if file_list[i] not in torrent_file_set:
       print('UNNEEDED  {0}'.format(file_list[i]))
       num_redundant += 1
+      
+      # --- Deleted unneeded file
+      if __prog_options_deleteUnneeded:
+        print('      RM  {0}'.format(file_list[i]))
+        # This option is very dangerous if user writes the wrong directory
+        # Always confirm with user
+        delete_file = 0
+        if force_delete:
+          delete_file = 1
+        else:
+          result = query_yes_no_all('Delete this file?')
+          if result == 1:
+            delete_file = 1
+          elif result == 0:
+            delete_file = 0
+            print('File not deleted')
+          elif result == -1:
+            delete_file = 1
+            force_delete = True
+          else:
+            print('Logic error')
+        if delete_file:
+          os.unlink(file_list[i])
+          num_deleted_files += 1
     else:
       print('      OK  {0}'.format(file_list[i]))
       num_needed += 1
-    
-  print('Files in torrent data directory : {0:,}'.format(len(file_list)))
-  print('Files in torrent                : {0:,}'.format(len(torrent_file_list)))
-  print('Needed                          : {0:,}'.format(num_needed))
-  print('Unneeded                        : {0:,}'.format(num_redundant))
-
-# Removes unneeded files from torrent download directory
-def delete_torrent_unneeded_files(data_directory, torrent_obj):
-  print('Removing torrent unneeded files')
-
-  # --- Make a recursive list of files in torrent data directory
-  torrent_directory = os.path.join(data_directory, torrent_obj.dir_name)
-  file_list = []
-  for root, dirs, files in os.walk(torrent_directory, topdown=False):
-    for name in files:
-      file_list.append(os.path.join(root, name))
-      
-  # --- Make a set of files in the list of torrent metadata files
-  torrent_file_list = []
-  for i in range(len(torrent_obj.file_name_list)):
-    filename_path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[i])
-    torrent_file_list.append(filename_path);
-  torrent_file_set = set(torrent_file_list)
-  # Check number of elements in list and set are the same. This means there are no
-  # duplicate files in the list
-  if len(torrent_file_list) != len(torrent_file_set):
-    print('len(torrent_file_list) != len(torrent_file_set)')
-    exit(1)
-
-  # --- Check if files in the torrent directory are on the metadata file set
-  num_needed = 0
-  num_redundant = 0
-  for i in range(len(file_list)):
-    if file_list[i] not in torrent_file_set:
-      print('UNNEEDED  {0}'.format(file_list[i]))
-      num_redundant += 1
-      # Delete unneeded file
-      print('      RM  {0}'.format(file_list[i]))
-      os.unlink(file_list[i])
-    else:
-      # Do not list needed files
-      num_needed += 1
-    
-  print('Files in torrent data directory : {0:,}'.format(len(file_list)))
-  print('Files in torrent                : {0:,}'.format(len(torrent_file_list)))
-  print('Needed                          : {0:,}'.format(num_needed))
-  print('Unneeded                        : {0:,}'.format(num_redundant))
-
+ 
+  # --- Print torrent metadata
+  print('')
+  print('Torrent file            : {0}'.format(torrent_obj.torrent_file))
+  print('Pieces info             : {0:10,} pieces, {1:16,} bytes/piece'.format(torrent_obj.num_pieces, torrent_obj.piece_length))
+  print('Files info              : {0:10,} files,  {1:16,} total bytes'.format(torrent_obj.num_files, torrent_obj.total_bytes))
+  print('Torrent directory       : {0}'.format(torrent_obj.dir_name))
+  print('Data directory          : {0}'.format(data_directory)) 
+  print('Files in data directory : {0:,}'.format(len(file_list)))
+  print('Needed files            : {0:,}'.format(num_needed))
+  print('Unneeded files          : {0:,}'.format(num_redundant))
+  if __prog_options_deleteUnneeded:
+    print('Deleted files           : {0:,}'.format(num_deleted_files))
+  
 # This naive piece generator only works if files have correct size
 def pieces_generator_naive(data_directory, torrent):
   """Yield pieces from download file(s)."""
@@ -621,8 +699,9 @@ g = p.add_mutually_exclusive_group()
 g.add_argument("--check", help="Do a basic torrent check: files there or not and size", action="store_true")
 g.add_argument("--checkUnneeded", help="Write me", action="store_true")
 g.add_argument("--checkHash", help="Full check with SHA1 hash", action="store_true")
-p.add_argument("--deleteWrongSizeFiles", help="Delete files having wrong size", action="store_true")
-p.add_argument("--truncateWrongSizeFiles", help="Chop files with incorrect size to right one", action="store_true")
+d = p.add_mutually_exclusive_group()
+d.add_argument("--deleteWrongSizeFiles", help="Delete files having wrong size", action="store_true")
+d.add_argument("--truncateWrongSizeFiles", help="Chop files with incorrect size to right one", action="store_true")
 p.add_argument("--deleteUnneeded", help="Write me", action="store_true")
 args = p.parse_args();
 
@@ -657,9 +736,9 @@ if args.deleteUnneeded:
 data_directory = '/home/mendi/Data/temp-KTorrent/'
 
 # torrentFileName = 'MAME Guide V1.torrent'
-torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
+# torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
 # torrentFileName = 'MAME 0.162 Software List ROMs (TZ-Split).torrent'
-# torrentFileName = 'No Intro (2015-02-16).torrent'
+torrentFileName = 'No Intro (2015-02-16).torrent'
 # torrentFileName = 'MAME 0.162 ROMs (Torrentzipped-split).torrent'
 # torrentFileName = 'Vogt, A. E. van -  El viaje.torrent'
 
