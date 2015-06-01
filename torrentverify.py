@@ -25,6 +25,7 @@ import sys
 import os
 import hashlib
 import argparse
+import shutil
 import bencodepy
 
 # --- Global variables
@@ -33,6 +34,7 @@ __software_version = '0.1.0';
 # --- Program options (from command line)
 __prog_options_deleteWrongSizeFiles = 0
 __prog_options_chopWrongSizeFiles = 0
+__prog_options_deleteUnneeded = 0
 
 # Unified torrent information object. Works for torrent files with 1 or several
 # files.
@@ -46,7 +48,19 @@ class Torrent:
   file_length_list = []
   pieces_hash_list = []
 
+# https://docs.python.org/3/library/shutil.html#querying-the-size-of-the-output-terminal
+__cols, __lines = shutil.get_terminal_size()
+print('{0} cols and {1} lines'.format(__cols, __lines))
+
 # --- Functions ---------------------------------------------------------------
+def limit_string_lentgh(string, max_length):
+  if len(string) > max_length:
+    string = (string[:max_length-1] + '*');
+  else:
+    string
+
+  return string
+
 # Convert a list of bytes into a path
 def join_file_byte_list(file_list_bytes):
   file_list_string = []
@@ -161,6 +175,64 @@ def extract_torrent_metadata(filename):
       print(' num_pieces * piece_length = {0}'.format(num_pieces * t_piece_length))
       print(' len(torrent.pieces_hash_list) = {0}'.format(len(torrent.pieces_hash_list)))
 
+  # Make a list of files for each piece. Should include also the file offsets.
+  # This is to find torrent that has padded files that must be trimmend.
+  # Many Linux torrent clients have this bug in ext4 filesystems.
+  # [ [{'file_idx': 0, 'start_offset': 1234, 'end_offset': 5678},
+  #    { ... } ],
+  #   [  ...   ],
+  #   ...
+  # ]
+  piece_length = torrent.piece_length
+  pieces_file_list = []
+  piece_current_length = 0
+  this_piece_files_list = []
+  for i in range(torrent.num_files):
+    file_dict = {}
+    file_dict['file_idx'] = i
+    file_dict['start_offset'] = 0
+    file_size = file_current_size = torrent.file_length_list[i]
+    while True:
+      remaining_piece_bytes = piece_length - piece_current_length
+      if file_current_size > remaining_piece_bytes:
+        piece_current_length += remaining_piece_bytes
+        file_current_size -= remaining_piece_bytes
+      else:
+        piece_current_length += file_current_size
+        file_current_size = 0
+      # Go for next file if no more bytes
+      if file_current_size == 0:
+        file_dict['end_offset'] = file_size
+        this_piece_files_list.append(file_dict)
+        break
+      # Piece is ready, add to the list
+      file_dict['end_offset'] = file_size - file_current_size
+      this_piece_files_list.append(file_dict)
+      pieces_file_list.append(this_piece_files_list)
+      # Reset piece files list and size
+      piece_current_length = 0
+      this_piece_files_list = []
+      # Add current file to piece files list
+      file_dict = {}
+      file_dict['file_idx'] = i
+      file_dict['start_offset'] = file_size - file_current_size
+  # Last piece
+  if piece_current_length > 0:
+    pieces_file_list.append(this_piece_files_list)
+    
+  # Put in torrent object
+  torrent.pieces_file_list = pieces_file_list
+
+  # DEBUG: print list of files per piece
+  if __debug_torrent_extract_metadata:
+    for piece_idx in range(len(pieces_file_list)):
+      print('Piece {0:06d}'.format(piece_idx))
+      this_piece_files_list = pieces_file_list[piece_idx]
+      for file_idx in range(len(this_piece_files_list)):
+        file_dict = this_piece_files_list[file_idx]
+        print(' File {0:06d} start {1:8d} end {2:8d}'
+          .format(file_dict['file_idx'], file_dict['start_offset'], file_dict['end_offset']))
+
   return torrent
 
 def list_torrent_contents(torrent_obj):
@@ -189,7 +261,8 @@ def list_torrent_contents(torrent_obj):
 def check_torrent_files_only(data_directory, torrent_obj):
   print('Checking torrent files and sizes (NOT hash)')
   num_files_OK = 0
-  num_files_bad_size = 0
+  num_files_bigger_size = 0
+  num_files_smaller_size = 0
   num_files_missing = 0
   print('    F#   Status     Actual Bytes    Torrent Bytes  File name')
   print('------ -------- ---------------- ----------------  --------------')
@@ -205,7 +278,10 @@ def check_torrent_files_only(data_directory, torrent_obj):
         num_files_OK += 1
       else:
         status = 'BAD_SIZE'
-        num_files_bad_size += 1
+        if file_size > torrent_obj.file_length_list[i]:
+          num_files_bigger_size += 1
+        else:
+          num_files_smaller_size += 1
     else:
       status = 'MISSING'
       num_files_missing += 1
@@ -220,14 +296,15 @@ def check_torrent_files_only(data_directory, torrent_obj):
 
   # --- Print torrent metadata
   print('')
-  print('Torrent file      : {0}'.format(torrent_obj.torrent_file))
-  print('Pieces info       : {0:10,} pieces, {1:16,} bytes/piece'.format(torrent_obj.num_pieces, torrent_obj.piece_length))
-  print('Files info        : {0:10,} files,  {1:16,} total bytes'.format(torrent_obj.num_files, torrent_obj.total_bytes))
-  print('Torrent directory : {0}'.format(torrent_obj.dir_name))
-  print('Data directory    : {0}'.format(data_directory))
-  print('Files OK          : {0:,}'.format(num_files_OK))
-  print('Files bad size    : {0:,}'.format(num_files_bad_size))
-  print('Files missing     : {0:,}'.format(num_files_missing))
+  print('Torrent file       : {0}'.format(torrent_obj.torrent_file))
+  print('Pieces info        : {0:10,} pieces, {1:16,} bytes/piece'.format(torrent_obj.num_pieces, torrent_obj.piece_length))
+  print('Files info         : {0:10,} files,  {1:16,} total bytes'.format(torrent_obj.num_files, torrent_obj.total_bytes))
+  print('Torrent directory  : {0}'.format(torrent_obj.dir_name))
+  print('Data directory     : {0}'.format(data_directory))
+  print('Files OK           : {0:,}'.format(num_files_OK))
+  print('Files w big size   : {0:,}'.format(num_files_bigger_size))
+  print('Files w small size : {0:,}'.format(num_files_smaller_size))
+  print('Files missing      : {0:,}'.format(num_files_missing))
 
 # Lists torrent unneeded files
 def list_torrent_unneeded_files(data_directory, torrent_obj):
@@ -316,7 +393,8 @@ def delete_torrent_unneeded_files(data_directory, torrent_obj):
   print('Needed                          : {0:,}'.format(num_needed))
   print('Unneeded                        : {0:,}'.format(num_redundant))
 
-def pieces_generator(data_directory, torrent):
+# This naive piece generator only works if files have correct size
+def pieces_generator_naive(data_directory, torrent):
   """Yield pieces from download file(s)."""
   piece_length = torrent.piece_length
   
@@ -364,12 +442,67 @@ def pieces_generator(data_directory, torrent):
         return
       yield piece
 
+# This piece generator returns zeros if file does not exists. Also,
+# if files are padded at the end does not return that padding. This is to
+# mimic KTorrent behaviour: files will pass the SHA checksum of the torrent
+# but some files will have bigger sizes that need to be truncated.
+def pieces_generator(data_directory, torrent):
+  piece_length = torrent.piece_length
+  for piece_idx in range(torrent.num_pieces):
+    # Get list of files for this piece
+    this_piece_files_list = torrent.pieces_file_list[piece_idx]
+    # Iterate through files and make piece
+    piece = b''
+    file_idx_list = []
+    for file_idx in range(len(this_piece_files_list)):
+      # Get file info
+      file_dict = this_piece_files_list[file_idx]
+      file_name = torrent_obj.file_name_list[file_dict['file_idx']]
+      file_start = file_dict['start_offset']
+      file_end = file_dict['end_offset']
+      file_correct_size = torrent_obj.file_length_list[file_dict['file_idx']]
+      file_idx_list.append(file_dict['file_idx'])
+      # Read file
+      path = os.path.join(data_directory, torrent_obj.dir_name, file_name)
+      file_exists = os.path.isfile(path)
+      if file_exists:
+        file_size = os.path.getsize(path)
+        if file_size == file_correct_size:
+          # If downloaded file has correct size then read whithin the file
+          # limits. Maybe the whole file if file is smaller than the piece size
+          sfile = open(path, "rb")
+          sfile.seek(file_start)
+          piece += sfile.read(file_end - file_start)
+          sfile.close()
+        elif file_size < file_correct_size:
+          # If downloaded file has less size then pad with zeros.
+          # To simplify things, treat file as if it doesn't exist.
+          # Consequently, SHA1 check will fail.
+          piece += bytearray(file_end - file_start)
+        else:
+          # If downloaded file has more size then truncate file read. Note that 
+          # SHA1 check may succed, but file will have an incorrect bigger size 
+          # that must be truncated later.
+          sfile = open(path, "rb")
+          sfile.seek(file_start)
+          piece += sfile.read(file_end - file_start)
+          sfile.close()         
+      else:
+        # If file does not exists at all, just pad with zeros
+        piece += bytearray(file_end - file_start)
+    # Yield piece
+    yield (piece, file_idx_list)
+
 # Checks torrent files against SHA1 hash for integrity
 def check_torrent_files_hash(data_directory, torrent_obj):
   print('    P#     F#  HStatus  FStatus     Actual Bytes    Torrent Bytes  File name')
   print('------ ------ -------- -------- ---------------- ----------------  --------------')
   
   # --- Iterate through pieces
+  num_files_OK_list = []
+  num_files_bigger_size_list = []
+  num_files_smaller_size_list = []
+  num_files_missing_list = []
   piece_index = 0
   good_pieces = 0
   bad_pieces = 0
@@ -377,18 +510,14 @@ def check_torrent_files_hash(data_directory, torrent_obj):
     # --- Compare piece hash with expected hash
     piece_hash = hashlib.sha1(piece).digest()
     if piece_hash != torrent_obj.pieces_hash_list[piece_index]:
-      piece_sha1_OK = 0
+      hash_status = 'BAD_SHA'
       bad_pieces += 1
     else:
-      piece_sha1_OK = 1
+      hash_status = 'GOOD_SHA'
       good_pieces += 1
 
     # --- Print information
     for i in range(len(file_idx_list)):
-      if piece_sha1_OK:
-        hash_status = 'SHA1 OK'
-      else:
-        hash_status = 'SHA1 BAD'
       file_idx = file_idx_list[i]
       path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[file_idx])
       file_exists = os.path.isfile(path)
@@ -396,24 +525,58 @@ def check_torrent_files_hash(data_directory, torrent_obj):
         file_size = os.path.getsize(path)
         if file_size == torrent_obj.file_length_list[file_idx]:
           file_status = 'OK'
+          num_files_OK_list.append(file_idx)
         else:
           file_status = 'BAD_SIZE'
+          if file_size > torrent_obj.file_length_list[i]:
+            num_files_bigger_size_list.append(file_idx)
+          else:
+            num_files_smaller_size_list.append(file_idx)
       else:
         file_status = 'MISSING'
-      print('{0:6d} {1:6} {2:>8} {3:>8} {4:16,} {5:16,}  {6}'
-        .format(piece_index+1, file_idx+1, hash_status, file_status, file_size,
-                torrent_obj.file_length_list[file_idx], torrent_obj.file_name_list[file_idx]))
-    # stop for DEBUG
-    # if not piece_sha1_OK:
-    #   print('Errors found. Exiting.')
-    #   exit(1)
-
-    # Increment piece counter
+        num_files_missing_list.append(file_idx)
+      # --- Print odd/even pieces with different colors
+      text_size = 7+7+9+9+17+17+1
+      if piece_index % 2:
+        print('{0:06d} {1:6} {2:>8} {3:>8} {4:16,} {5:16,}  {6}'
+          .format(piece_index+1, file_idx+1, hash_status, file_status, file_size,
+                  torrent_obj.file_length_list[file_idx], 
+                  limit_string_lentgh(torrent_obj.file_name_list[file_idx], __cols -text_size)))
+      else:
+        print('\033[0;97m{0:06d} {1:6} {2:>8} {3:>8} {4:16,} {5:16,}  {6}\033[0m'
+          .format(piece_index+1, file_idx+1, hash_status, file_status, file_size,
+                  torrent_obj.file_length_list[file_idx], 
+                  limit_string_lentgh(torrent_obj.file_name_list[file_idx], __cols -text_size)))
+    # --- Increment piece counter
     piece_index += 1
 
-  # ensure we've read all pieces
-  print('Checked {0} pieces out of {1}'.format(piece_index, torrent_obj.num_pieces))
-  print('Good pieces {0} / Bad pieces {1}'.format(good_pieces, bad_pieces))
+  # --- Make lists set to avoid duplicates
+  num_files_OK_set           = set(num_files_OK_list)
+  num_files_bigger_size_set  = set(num_files_bigger_size_list)
+  num_files_smaller_size_set = set(num_files_smaller_size_list)
+  num_files_missing_set      = set(num_files_missing_list)
+
+  # --- Print torrent metadata
+  print('')
+  print('Torrent file        : {0}'.format(torrent_obj.torrent_file))
+  print('Pieces info         : {0:10,} pieces, {1:16,} bytes/piece'.format(torrent_obj.num_pieces, torrent_obj.piece_length))
+  print('Files info          : {0:10,} files,  {1:16,} total bytes'.format(torrent_obj.num_files, torrent_obj.total_bytes))
+  print('Torrent directory   : {0}'.format(torrent_obj.dir_name))
+  print('Data directory      : {0}'.format(data_directory))
+  print('Files OK            : {0:12,}'.format(len(num_files_OK_set)))
+  print('Files w big size    : {0:12,}'.format(len(num_files_bigger_size_set)))
+  print('Files w small size  : {0:12,}'.format(len(num_files_smaller_size_set)))
+  print('Files missing       : {0:12,}'.format(len(num_files_missing_set)))
+  print('# of pieces checked : {0:12,}'.format(piece_index))
+  print('Good pieces         : {0:12,}'.format(good_pieces))
+  print('Bad pieces          : {0:12,}'.format(bad_pieces))
+
+  if bad_pieces == 0 and len(num_files_bigger_size_set):
+    print("""WARNING
+ Downloaded files pass SHA check but some files are bigger than they should be.
+ Run torrentverify with --check and --truncateWrongSizeFiles parameters to correct the 
+ problems and then run torrentverify with --checkHash parameter only to make sure 
+ problems are solved.""")
 
 def do_printHelp():
   print("""
@@ -429,17 +592,20 @@ def do_printHelp():
  
   \033[35m--check\033[0m
     Write me
- 
-  \033[35m--checkUnneeded\033[0m
-    Write me
-
-  \033[35m--checkHash\033[0m
-    Write me
 
   \033[35m--deleteWrongSizeFiles\033[0m
     Write me
  
-  \033[35m--chopWrongSizeFiles\033[0m
+  \033[35m--truncateWrongSizeFiles\033[0m
+    Write me
+
+  \033[35m--checkUnneeded\033[0m
+    Write me
+
+  \033[35m--deleteUnneeded\033[0m
+    Write me
+
+  \033[35m--checkHash\033[0m
     Write me""")
 
 # -----------------------------------------------------------------------------
@@ -448,15 +614,17 @@ def do_printHelp():
 print('\033[36mTorrentVerify\033[0m' + ' version ' + __software_version)
 
 # --- Command line parser
-parser = argparse.ArgumentParser()
-parser.add_argument('-t', help="Torrent file", nargs = 1)
-parser.add_argument("-d", help="Data directory", action="store_true")
-parser.add_argument("--check", help="Do a basic torrent check: files there or not and size", action="store_true")
-parser.add_argument("--checkUnneeded", help="Write me", action="store_true")
-parser.add_argument("--checkHash", help="Full check with SHA1 hash", action="store_true")
-parser.add_argument("--deleteWrongSizeFiles", help="Delete files having wrong size", action="store_true")
-parser.add_argument("--chopWrongSizeFiles", help="Chop files with incorrect size to right one", action="store_true")
-args = parser.parse_args();
+p = argparse.ArgumentParser()
+p.add_argument('-t', help="Torrent file", nargs = 1)
+p.add_argument("-d", help="Data directory", nargs = 1)
+g = p.add_mutually_exclusive_group()
+g.add_argument("--check", help="Do a basic torrent check: files there or not and size", action="store_true")
+g.add_argument("--checkUnneeded", help="Write me", action="store_true")
+g.add_argument("--checkHash", help="Full check with SHA1 hash", action="store_true")
+p.add_argument("--deleteWrongSizeFiles", help="Delete files having wrong size", action="store_true")
+p.add_argument("--truncateWrongSizeFiles", help="Chop files with incorrect size to right one", action="store_true")
+p.add_argument("--deleteUnneeded", help="Write me", action="store_true")
+args = p.parse_args();
 
 # --- Read arguments
 torrentFileName = data_directory = None
@@ -478,14 +646,18 @@ if args.checkHash:
 # Optional arguments
 if args.deleteWrongSizeFiles:
   __prog_options_deleteWrongSizeFiles = 1
-if args.chopWrongSizeFiles:
-  __prog_options_chopWrongSizeFiles = 1
+
+if args.truncateWrongSizeFiles:
+  __prog_options_truncateWrongSizeFiles = 1
+
+if args.deleteUnneeded:
+  __prog_options_deleteUnneeded = 1
 
 # --- DEBUG
-# data_directory = '/home/mendi/Data/temp-KTorrent/'
+data_directory = '/home/mendi/Data/temp-KTorrent/'
 
 # torrentFileName = 'MAME Guide V1.torrent'
-# torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
+torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
 # torrentFileName = 'MAME 0.162 Software List ROMs (TZ-Split).torrent'
 # torrentFileName = 'No Intro (2015-02-16).torrent'
 # torrentFileName = 'MAME 0.162 ROMs (Torrentzipped-split).torrent'
@@ -494,7 +666,13 @@ if args.chopWrongSizeFiles:
 # --- Extrant torrent metadata
 if not torrentFileName:
   do_printHelp()
-  exit(0)
+  exit(1)
+
+if (check or checkUnneeded or checkHash) and data_directory == None:
+  do_printHelp()
+  exit(1)
+
+# --- Read torrent file metadata  
 torrent_obj = extract_torrent_metadata(torrentFileName)
 
 # --- Decide what to do based on arguments
@@ -502,7 +680,6 @@ if check:
   check_torrent_files_only(data_directory, torrent_obj)
 elif checkUnneeded:
   list_torrent_unneeded_files(data_directory, torrent_obj)
-  # delete_torrent_unneeded_files(data_directory, torrent_obj)
 elif checkHash:
   check_torrent_files_hash(data_directory, torrent_obj)
 else:
