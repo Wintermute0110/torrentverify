@@ -1,10 +1,38 @@
 #!/usr/bin/python3
+# Torrentverify
+
+# Copyright (c) 2015 Wintermute0110 <wintermute0110@gmail.com>
 #
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
 import io
 import sys
 import os
 import hashlib
+import argparse
 import bencodepy
+
+# --- Global variables
+__software_version = '0.1.0';
+
+# --- Program options (from command line)
+__prog_options_deleteWrongSizeFiles = 0
+__prog_options_chopWrongSizeFiles = 0
 
 # Unified torrent information object. Works for torrent files with 1 or several
 # files.
@@ -136,6 +164,8 @@ def extract_torrent_metadata(filename):
   return torrent
 
 def list_torrent_contents(torrent_obj):
+  print('Printing torrent file contents...')
+
   # --- Print list of files
   print('    F#            Bytes  File name')
   print('------ ----------------  --------------')
@@ -385,25 +415,97 @@ def check_torrent_files_hash(data_directory, torrent_obj):
   print('Checked {0} pieces out of {1}'.format(piece_index, torrent_obj.num_pieces))
   print('Good pieces {0} / Bad pieces {1}'.format(good_pieces, bad_pieces))
 
-# --- Main --------------------------------------------------------------------
-data_directory = '/home/mendi/Data/temp-KTorrent/'
+def do_printHelp():
+  print("""
+\033[32mUsage: torrentverify.py -t file.torrent -d /dataDir/ <options>\033[0m
+    If not options are specified...
+
+\033[32mOptions:
+  \033[35m-t\033[0m \033[31m[logName]\033[0m
+    Torrent file.
+
+  \033[35m-d\033[0m
+    Directory where torrent is downloaded.
+ 
+  \033[35m--check\033[0m
+    Write me
+ 
+  \033[35m--checkUnneeded\033[0m
+    Write me
+
+  \033[35m--checkHash\033[0m
+    Write me
+
+  \033[35m--deleteWrongSizeFiles\033[0m
+    Write me
+ 
+  \033[35m--chopWrongSizeFiles\033[0m
+    Write me""")
+
+# -----------------------------------------------------------------------------
+# main function
+# -----------------------------------------------------------------------------
+print('\033[36mTorrentVerify\033[0m' + ' version ' + __software_version)
+
+# --- Command line parser
+parser = argparse.ArgumentParser()
+parser.add_argument('-t', help="Torrent file", nargs = 1)
+parser.add_argument("-d", help="Data directory", action="store_true")
+parser.add_argument("--check", help="Do a basic torrent check: files there or not and size", action="store_true")
+parser.add_argument("--checkUnneeded", help="Write me", action="store_true")
+parser.add_argument("--checkHash", help="Full check with SHA1 hash", action="store_true")
+parser.add_argument("--deleteWrongSizeFiles", help="Delete files having wrong size", action="store_true")
+parser.add_argument("--chopWrongSizeFiles", help="Chop files with incorrect size to right one", action="store_true")
+args = parser.parse_args();
+
+# --- Read arguments
+torrentFileName = data_directory = None
+check = checkUnneeded = checkHash = 0
+
+if args.t:
+  torrentFileName = args.t[0];
+if args.d:
+  data_directory = args.d;
+  
+# Arguments that define behaviour
+if args.check:
+  check = 1
+if args.checkUnneeded:
+  checkUnneeded = 1  
+if args.checkHash:
+  checkHash = 1
+
+# Optional arguments
+if args.deleteWrongSizeFiles:
+  __prog_options_deleteWrongSizeFiles = 1
+if args.chopWrongSizeFiles:
+  __prog_options_chopWrongSizeFiles = 1
+
+# --- DEBUG
+# data_directory = '/home/mendi/Data/temp-KTorrent/'
 
 # torrentFileName = 'MAME Guide V1.torrent'
-torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
+# torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
 # torrentFileName = 'MAME 0.162 Software List ROMs (TZ-Split).torrent'
 # torrentFileName = 'No Intro (2015-02-16).torrent'
 # torrentFileName = 'MAME 0.162 ROMs (Torrentzipped-split).torrent'
 # torrentFileName = 'Vogt, A. E. van -  El viaje.torrent'
 
 # --- Extrant torrent metadata
+if not torrentFileName:
+  do_printHelp()
+  exit(0)
 torrent_obj = extract_torrent_metadata(torrentFileName)
 
-# --- Print info
-# list_torrent_contents(torrent_obj)
+# --- Decide what to do based on arguments
+if check:
+  check_torrent_files_only(data_directory, torrent_obj)
+elif checkUnneeded:
+  list_torrent_unneeded_files(data_directory, torrent_obj)
+  # delete_torrent_unneeded_files(data_directory, torrent_obj)
+elif checkHash:
+  check_torrent_files_hash(data_directory, torrent_obj)
+else:
+  list_torrent_contents(torrent_obj)
 
-# check_torrent_files_only(data_directory, torrent_obj)
-
-# list_torrent_unneeded_files(data_directory, torrent_obj)
-# delete_torrent_unneeded_files(data_directory, torrent_obj)
-
-check_torrent_files_hash(data_directory, torrent_obj)
+exit(0)
