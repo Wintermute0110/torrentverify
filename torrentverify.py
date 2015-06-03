@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+#
 # Torrentverify
 # Copyright (c) 2015 Wintermute0110 <wintermute0110@gmail.com>
 #
@@ -278,11 +279,11 @@ def list_torrent_contents(torrent_obj):
   # --- Print torrent metadata
   print('')
   print('Torrent file      : {0}'.format(torrent_obj.torrent_file))
-  print('Torrent directory : {0}'.format(torrent_obj.dir_name))
   print('Pieces info       : {0:10,} pieces, {1:16,} bytes/piece'
     .format(torrent_obj.num_pieces, torrent_obj.piece_length))
   print('Files info        : {0:10,} files,  {1:16,} total bytes'
     .format(torrent_obj.num_files, torrent_obj.total_bytes))
+  print('Torrent directory : {0}/'.format(torrent_obj.dir_name))
   # print('Torrent comment  : {0}'.format(torrent.comment))
 
 # Checks that files listed in the torrent file exist, and that file size
@@ -659,34 +660,51 @@ def check_torrent_files_hash(data_directory, torrent_obj):
  problems are solved.""")
 
 def do_printHelp():
-  print("""
-\033[32mUsage: torrentverify.py -t file.torrent -d /dataDir/ <options>\033[0m
-    If not options are specified...
+  print("""\033[32mUsage: torrentverify.py -t file.torrent [-d /dataDir/] [options]\033[0m
+   A small utility written in Python that lists contents of torrent files, deletes
+unneeded files in the torrent downloaded data directory, and checks the torrent 
+downloaded files for errors (either a fast test for file existence and size or a slower, 
+comprehensive test using the SHA1 hash) optionally deleting or truncating wrong size files.
+   If only the torrent file is input with -t file.torrent then torrent file contents are 
+listed but no other action is performed.
 
 \033[32mOptions:
-  \033[35m-t\033[0m \033[31m[logName]\033[0m
-    Torrent file.
+ \033[35m-t\033[0m \033[31mfile.torrent\033[0m
+   Torrent filename.
 
-  \033[35m-d\033[0m
-    Directory where torrent is downloaded.
+ \033[35m-d\033[0m \033[31m/directory/\033[0m
+   Directory where torrent is downloaded.
  
-  \033[35m--check\033[0m
-    Write me
+ \033[35m--check\033[0m
+   Checks that all the files listed in the torrent file are in the download directory
+   and that their size is correct. This test is very fast but files having wrong checksum
+   are not detected.
 
-  \033[35m--deleteWrongSizeFiles\033[0m
-    Write me
+ \033[35m--deleteWrongSizeFiles\033[0m
+   Delete files in the torrent download directory whose size is incorrect. Then, you can
+   use your favourite torrent client to recreate (download) them again. Use this option
+   in conjuction with --check.
  
-  \033[35m--truncateWrongSizeFiles\033[0m
-    Write me
+ \033[35m--truncateWrongSizeFiles\033[0m
+   Truncate files whose size is bigger than it should be. This may solve bugs with some
+   torrent clients, specially when older version of the downloaded files are used as
+   starting point to download a new torrent. Use this option in conjuction with --check.
+   After using this option, it is recommended you check the SHA1 with --checkHash to make
+   sure everything is OK with your downloaded files.
 
-  \033[35m--checkUnneeded\033[0m
-    Write me
+ \033[35m--checkUnneeded\033[0m
+   Checks the torrent download list and finds files there not belonging to the torrent.
 
-  \033[35m--deleteUnneeded\033[0m
-    Write me
+ \033[35m--deleteUnneeded\033[0m
+   Deletes unneeded files in the torrent directory. Use this option in conjuction with
+   --checkUnneeded. You will be asked wheter to delete the files or not for secutiry.
+   WARNING: this option is dangerous! If you specify the wrong directory you may
+   potentially delete all files in you computer!
 
-  \033[35m--checkHash\033[0m
-    Write me""")
+ \033[35m--checkHash\033[0m
+   Checks torrent downloaded files against the SHA1 checksum. This test is slow. Also,
+   if some files contain padding (extra bytes at the end of the file) SHA1 will pass
+   but files may be incorrect (see --truncateWrongSizeFiles option).""")
 
 # -----------------------------------------------------------------------------
 # main function
@@ -714,7 +732,7 @@ check = checkUnneeded = checkHash = 0
 if args.t:
   torrentFileName = args.t[0];
 if args.d:
-  data_directory = args.d;
+  data_directory = args.d[0];
   
 # Arguments that define behaviour
 if args.check:
@@ -734,16 +752,6 @@ if args.truncateWrongSizeFiles:
 if args.deleteUnneeded:
   __prog_options_deleteUnneeded = 1
 
-# --- DEBUG
-data_directory = '/home/mendi/Data/temp-KTorrent/'
-
-# torrentFileName = 'MAME Guide V1.torrent'
-# torrentFileName = 'Sega 32X Manuals (DMC-v2014-08-16).torrent'
-# torrentFileName = 'MAME 0.162 Software List ROMs (TZ-Split).torrent'
-torrentFileName = 'No Intro (2015-02-16).torrent'
-# torrentFileName = 'MAME 0.162 ROMs (Torrentzipped-split).torrent'
-# torrentFileName = 'Vogt, A. E. van -  El viaje.torrent'
-
 # --- Extrant torrent metadata
 if not torrentFileName:
   do_printHelp()
@@ -751,6 +759,15 @@ if not torrentFileName:
 
 if (check or checkUnneeded or checkHash) and data_directory == None:
   do_printHelp()
+  exit(1)
+
+# --- Check for errors
+if not os.path.isfile(torrentFileName):
+  print('Torrent file not found : {0}'.format(torrentFileName))
+  exit(1)
+  
+if data_directory != None and not os.path.isdir(data_directory):
+  print('Download directory not found : {0}'.format(data_directory))
   exit(1)
 
 # --- Read torrent file metadata  
