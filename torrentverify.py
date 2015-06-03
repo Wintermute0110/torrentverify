@@ -346,7 +346,7 @@ def check_torrent_files_only(data_directory, torrent_obj):
             delete_file = 1
             force_delete = True
           else:
-            print('Logic error')
+            print('Logic error (delete)')
         if delete_file:
           os.unlink(file_list[i])
           num_deleted_files += 1
@@ -361,12 +361,12 @@ def check_torrent_files_only(data_directory, torrent_obj):
         if force_truncate:
           truncate_file = 1
         else:
-          result = query_yes_no_all('Delete this file?')
+          result = query_yes_no_all('Truncate this file?')
           if result == 1:
             truncate_file = 1
           elif result == 0:
             truncate_file = 0
-            print('File not truncated')
+            print('File not truncated (truncate)')
           elif result == -1:
             truncate_file = 1
             force_truncate = True
@@ -397,8 +397,8 @@ def check_torrent_files_only(data_directory, torrent_obj):
     print('Truncated files    : {0:,}'.format(num_truncated_files))
 
 # Lists torrent unneeded files
-def list_torrent_unneeded_files(data_directory, torrent_obj):
-  print('Listing torrent unneeded files')
+def check_torrent_unneeded_files(data_directory, torrent_obj):
+  print('Checking torrent unneeded files')
 
   # --- Make a recursive list of files in torrent data directory
   torrent_directory = os.path.join(data_directory, torrent_obj.dir_name)
@@ -406,8 +406,10 @@ def list_torrent_unneeded_files(data_directory, torrent_obj):
   for root, dirs, files in os.walk(torrent_directory, topdown=False):
     for name in files:
       file_list.append(os.path.join(root, name))
-      
+
   # --- Make a set of files in the list of torrent metadata files
+  print('  Status                                File name')
+  print('--------  ---------------------------------------')
   torrent_file_list = []
   for i in range(len(torrent_obj.file_name_list)):
     filename_path = os.path.join(data_directory, torrent_obj.dir_name, torrent_obj.file_name_list[i])
@@ -606,7 +608,7 @@ def check_torrent_files_hash(data_directory, torrent_obj):
           num_files_OK_list.append(file_idx)
         else:
           file_status = 'BAD_SIZE'
-          if file_size > torrent_obj.file_length_list[i]:
+          if file_size > torrent_obj.file_length_list[file_idx]:
             num_files_bigger_size_list.append(file_idx)
           else:
             num_files_smaller_size_list.append(file_idx)
@@ -617,13 +619,13 @@ def check_torrent_files_hash(data_directory, torrent_obj):
       text_size = 7+7+9+9+17+17+1
       if piece_index % 2:
         print('{0:06d} {1:6} {2:>8} {3:>8} {4:16,} {5:16,}  {6}'
-          .format(piece_index+1, file_idx+1, hash_status, file_status, file_size,
-                  torrent_obj.file_length_list[file_idx], 
+          .format(piece_index+1, file_idx+1, hash_status, file_status, 
+                  file_size, torrent_obj.file_length_list[file_idx], 
                   limit_string_lentgh(torrent_obj.file_name_list[file_idx], __cols -text_size)))
       else:
         print('\033[0;97m{0:06d} {1:6} {2:>8} {3:>8} {4:16,} {5:16,}  {6}\033[0m'
-          .format(piece_index+1, file_idx+1, hash_status, file_status, file_size,
-                  torrent_obj.file_length_list[file_idx], 
+          .format(piece_index+1, file_idx+1, hash_status, file_status, 
+                  file_size, torrent_obj.file_length_list[file_idx], 
                   limit_string_lentgh(torrent_obj.file_name_list[file_idx], __cols -text_size)))
     # --- Increment piece counter
     piece_index += 1
@@ -758,7 +760,7 @@ torrent_obj = extract_torrent_metadata(torrentFileName)
 if check:
   check_torrent_files_only(data_directory, torrent_obj)
 elif checkUnneeded:
-  list_torrent_unneeded_files(data_directory, torrent_obj)
+  check_torrent_unneeded_files(data_directory, torrent_obj)
 elif checkHash:
   check_torrent_files_hash(data_directory, torrent_obj)
 else:
