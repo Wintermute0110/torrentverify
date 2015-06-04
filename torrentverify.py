@@ -47,6 +47,7 @@ class Torrent:
   file_name_list = []
   file_length_list = []
   pieces_hash_list = []
+  pieces_file_list = []
 
 # --- Get size of terminal
 # https://docs.python.org/3/library/shutil.html#querying-the-size-of-the-output-terminal
@@ -304,8 +305,8 @@ def list_torrent_contents(torrent_obj):
     .format(torrent_obj.num_pieces, torrent_obj.piece_length))
   print('Files info        : {0:10,} files,  {1:16,} total bytes'
     .format(torrent_obj.num_files, torrent_obj.total_bytes))
-  print('Torrent directory : {0}/'.format(torrent_obj.dir_name))
-  # print('Torrent comment  : {0}'.format(torrent.comment))
+  if torrent_obj.num_files > 1:
+    print('Torrent directory : {0}/'.format(torrent_obj.dir_name))
 
 # Checks that files listed in the torrent file exist, and that file size
 # is correct
