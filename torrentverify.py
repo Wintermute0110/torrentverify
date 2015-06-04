@@ -89,6 +89,27 @@ def query_yes_no_all(question, default="no"):
       sys.stdout.write("Please respond with 'yes', 'no' or 'all'"
                        " (or 'y' or 'n' or 'a').\n")
 
+def confirm_file_action(action_str, result_str, force_delete):
+  delete_file = 0
+  if force_delete:
+    delete_file = 1
+  else:
+    result = query_yes_no_all('{0} this file?'.format(action_str))
+    if result == 1:
+      delete_file = 1
+      print('File {0}'.format(result_str))
+    elif result == 0:
+      delete_file = 0
+      print('File not deleted')
+    elif result == -1:
+      delete_file = 1
+      force_delete = True
+      print('File {0}'.format(result_str))
+    else:
+      print('Logic error')
+
+  return (delete_file, force_delete)
+
 def limit_string_lentgh(string, max_length):
   if len(string) > max_length:
     string = (string[:max_length-1] + '*');
@@ -333,21 +354,7 @@ def check_torrent_files_only(data_directory, torrent_obj):
         print('RM  {0}'.format(filename_path))
         # This option is very dangerous if user writes the wrong directory
         # Always confirm with user
-        delete_file = 0
-        if force_delete:
-          delete_file = 1
-        else:
-          result = query_yes_no_all('Delete this file?')
-          if result == 1:
-            delete_file = 1
-          elif result == 0:
-            delete_file = 0
-            print('File not deleted')
-          elif result == -1:
-            delete_file = 1
-            force_delete = True
-          else:
-            print('Logic error (delete)')
+        delete_file, force_delete = confirm_file_action('Delete', 'deleted', force_delete)
         if delete_file:
           os.unlink(file_list[i])
           num_deleted_files += 1
@@ -358,21 +365,7 @@ def check_torrent_files_only(data_directory, torrent_obj):
         print('TRUNCATE  {0}'.format(filename_path))
         # This option is very dangerous if user writes the wrong directory
         # Always confirm with user
-        truncate_file = 0
-        if force_truncate:
-          truncate_file = 1
-        else:
-          result = query_yes_no_all('Truncate this file?')
-          if result == 1:
-            truncate_file = 1
-          elif result == 0:
-            truncate_file = 0
-            print('File not truncated (truncate)')
-          elif result == -1:
-            truncate_file = 1
-            force_truncate = True
-          else:
-            print('Logic error')
+        truncate_file, force_truncate = confirm_file_action('Truncate', 'truncated', force_truncate)
         if truncate_file:
           # w+ mode truncates the file, but the file if filled with zeros!
           # According to Python docs, r+ is for both read and writing, should work.
@@ -439,21 +432,7 @@ def check_torrent_unneeded_files(data_directory, torrent_obj):
         print('      RM  {0}'.format(file_list[i]))
         # This option is very dangerous if user writes the wrong directory
         # Always confirm with user
-        delete_file = 0
-        if force_delete:
-          delete_file = 1
-        else:
-          result = query_yes_no_all('Delete this file?')
-          if result == 1:
-            delete_file = 1
-          elif result == 0:
-            delete_file = 0
-            print('File not deleted')
-          elif result == -1:
-            delete_file = 1
-            force_delete = True
-          else:
-            print('Logic error')
+        delete_file, force_delete = confirm_file_action('Delete', 'deleted', force_delete)
         if delete_file:
           os.unlink(file_list[i])
           num_deleted_files += 1
