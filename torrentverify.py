@@ -358,7 +358,7 @@ def check_torrent_files_only(torrent_obj):
         # Always confirm with user
         delete_file, force_delete = confirm_file_action('Delete', 'deleted', force_delete)
         if delete_file:
-          os.unlink(file_list[i])
+          os.unlink(torrent_obj.file_length_list[i])
           num_deleted_files += 1
 
     # --- Truncate bigger size files
