@@ -492,6 +492,18 @@ def check_torrent_files_only(torrent):
   if __prog_options_truncateWrongSizeFiles:
     print('Truncated files    : {0:,}'.format(num_truncated_files))
 
+  if num_files_bigger_size > 0 and (num_files_smaller_size == 0 or num_files_missing == 0):
+    print("""WARNING
+ Found files with bigger size than it should be.
+ Run torrentverify with --check and --truncateWrongSizeFiles parameters
+ to correct the problems.""")
+
+  elif num_files_smaller_size > 0 or num_files_missing > 0:
+    print("""WARNING
+ Found files with smaller size than it should be or there are missing files.
+ It is likely there is some problem with this Torrent. Check with your Torrent
+ client and download the torrent again.""")
+
   return ret_value
 
 # Lists torrent unneeded files
@@ -559,6 +571,12 @@ def check_torrent_unneeded_files(torrent):
   if __prog_options_deleteUnneeded:
     print('Deleted files           : {0:,}'.format(num_deleted_files))
   
+  if num_redundant > 0:
+    print("""WARNING
+ Found unneeded files in the torrent download directory.
+ Run torrentverify with --checkUnneeded and --deleteUnneeded parameters
+ to correct the problems.""")
+
   return ret_value
 
 # This naive piece generator only works if files have correct size and exist
