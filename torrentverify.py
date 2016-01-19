@@ -410,6 +410,7 @@ def list_torrent_contents(torrent):
 # Status can be: OK, MISSING, BAD_SIZE
 def check_torrent_files_only(torrent):
   print('Checking torrent files and sizes (NOT hash)')
+  ret_value = 0
   num_files_OK = 0
   num_files_bigger_size = 0
   num_files_smaller_size = 0
@@ -431,12 +432,14 @@ def check_torrent_files_only(torrent):
         status = 'OK'
         num_files_OK += 1
       else:
+        ret_value = 1
         status = 'BAD_SIZE'
         if file_size > torrent.file_length_list[i]:
           num_files_bigger_size += 1
         else:
           num_files_smaller_size += 1
     else:
+      ret_value = 1
       status = 'MISSING'
       num_files_missing += 1
 
@@ -489,9 +492,12 @@ def check_torrent_files_only(torrent):
   if __prog_options_truncateWrongSizeFiles:
     print('Truncated files    : {0:,}'.format(num_truncated_files))
 
+  return ret_value
+
 # Lists torrent unneeded files
 def check_torrent_unneeded_files(torrent):
   print('Checking torrent unneeded files')
+  ret_value = 0
 
   # --- Make a recursive list of files in torrent data directory
   torrent_directory = os.path.join(torrent.dir_data)
@@ -523,6 +529,7 @@ def check_torrent_unneeded_files(torrent):
   for i in range(len(file_list)):
     if file_list[i] not in torrent_file_set:
       print('UNNEEDED  {0}'.format(file_list[i]))
+      ret_value = 1
       num_redundant += 1
       
       # --- Deleted unneeded file
@@ -552,6 +559,8 @@ def check_torrent_unneeded_files(torrent):
   if __prog_options_deleteUnneeded:
     print('Deleted files           : {0:,}'.format(num_deleted_files))
   
+  return ret_value
+
 # This naive piece generator only works if files have correct size and exist
 # on filesystem
 def pieces_generator_naive(torrent):
@@ -653,6 +662,7 @@ def pieces_generator(torrent, pieces_list=None):
 
 # Checks torrent files against SHA1 hash for integrity
 def check_torrent_files_hash(torrent):
+  ret_value = 0
   print('piece#  file#  HStatus  FStatus     Actual Bytes    Torrent Bytes  File name')
   print('------ ------ -------- -------- ---------------- ----------------  --------------')
   num_files_OK_list = []
@@ -668,6 +678,7 @@ def check_torrent_files_hash(torrent):
     if piece_hash != torrent.pieces_hash_list[piece_index]:
       hash_status = 'BAD_SHA'
       bad_pieces += 1
+      ret_value = 1
     else:
       hash_status = 'GOOD_SHA'
       good_pieces += 1
@@ -684,6 +695,7 @@ def check_torrent_files_hash(torrent):
           num_files_OK_list.append(file_idx)
         else:
           file_status = 'BAD_SIZE'
+          ret_value = 1
           if file_size > torrent.file_length_list[file_idx]:
             num_files_bigger_size_list.append(file_idx)
           else:
@@ -691,6 +703,7 @@ def check_torrent_files_hash(torrent):
       else:
         file_size = -1
         file_status = 'MISSING'
+        ret_value = 1
         num_files_missing_list.append(file_idx)
       # --- Print odd/even pieces with different colors
       text_size = 7+7+9+9+17+17+1
@@ -736,9 +749,13 @@ def check_torrent_files_hash(torrent):
  problems and then run torrentverify with --checkHash parameter only to make sure 
  problems are solved.""")
 
+  return ret_value
+
 # Checks single file against SHA1 hash for integrity
 __debug_file_location_in_torrent = 0
 def check_torrent_files_single_hash(torrent, fileName):
+  ret_value = 0
+
   # Remove torrent download directory from path
   dir_data = torrent.dir_data
   fileName_search = fileName.replace(dir_data, '');
@@ -778,7 +795,7 @@ def check_torrent_files_single_hash(torrent, fileName):
 
   if len(pieces_list) < 1:
     print('ERROR File not found in torrent list of files. Exiting.')
-    exit(1)
+    sys.exit(1)
 
   # --- Check pieces in list only
   print('piece#  file# HStatus  FStatus     Actual Bytes    Torrent Bytes  File name')
@@ -792,6 +809,7 @@ def check_torrent_files_single_hash(torrent, fileName):
     if piece_hash != torrent.pieces_hash_list[piece_index]:
       hash_status = 'BAD_SHA'
       bad_pieces += 1
+      ret_value = 1
     else:
       hash_status = 'GOOD_SHA'
       good_pieces += 1
@@ -807,9 +825,11 @@ def check_torrent_files_single_hash(torrent, fileName):
           file_status = 'OK'
         else:
           file_status = 'BAD_SIZE'
+          ret_value = 1
       else:
         file_size = -1
         file_status = 'MISSING'
+        ret_value = 1
       # --- Print odd/even pieces with different colors
       text_size = 7+7+9+9+17+17+1
       if piece_index % 2:
@@ -836,6 +856,8 @@ def check_torrent_files_single_hash(torrent, fileName):
   print('# of pieces checked : {0:12,}'.format(piece_counter))
   print('Good pieces         : {0:12,}'.format(good_pieces))
   print('Bad pieces          : {0:12,}'.format(bad_pieces))
+
+  return ret_value
 
 def do_printHelp():
   print("""\033[32mUsage: torrentverify.py -t file.torrent [-d /download_dir/] [options]\033[0m
@@ -896,6 +918,13 @@ listed but no other action is performed.
 
 # -----------------------------------------------------------------------------
 # main function
+#
+# Program returns
+# 0 everything OK
+# 1 error found with torrent files
+# 2 error in program arguments or no arguments given
+# 3 torrent file does not found
+# 4 data directory not found
 # -----------------------------------------------------------------------------
 print('\033[36mTorrentVerify\033[0m' + ' version ' + __software_version)
 
@@ -940,17 +969,17 @@ if args.deleteUnneeded:
 # --- Extrant torrent metadata
 if not torrentFileName:
   do_printHelp()
-  exit(1)
+  sys.exit(2)
 
 if (args.check or args.checkUnneeded or args.checkHash or args.checkFile) \
     and data_directory == None:
   do_printHelp()
-  exit(1)
+  sys.exit(2)
 
 # --- Check for torrent file existence
 if not os.path.isfile(torrentFileName):
   print('Torrent file not found : {0}'.format(torrentFileName))
-  exit(1)
+  sys.exit(3)
 
 # --- Read torrent file metadata  
 torrent_obj = extract_torrent_metadata(torrentFileName)
@@ -967,18 +996,18 @@ if data_directory != None:
   # Check that data directory exists
   if not os.path.isdir(torrent_obj.dir_data):
     print('Data directory not found : {0}'.format(torrent_obj.dir_data))
-    exit(1)
+    exit(4)
 
 # --- Decide what to do based on arguments
+ret_value = 0
 if args.check:
-  check_torrent_files_only(torrent_obj)
+  ret_value = check_torrent_files_only(torrent_obj)
 elif args.checkUnneeded:
-  check_torrent_unneeded_files(torrent_obj)
+  ret_value = check_torrent_unneeded_files(torrent_obj)
 elif args.checkHash:
-  check_torrent_files_hash(torrent_obj)
+  ret_value = check_torrent_files_hash(torrent_obj)
 elif args.checkFile:
-  check_torrent_files_single_hash(torrent_obj, args.checkFile[0])
+  ret_value = check_torrent_files_single_hash(torrent_obj, args.checkFile[0])
 else:
-  list_torrent_contents(torrent_obj)
-
-exit(0)
+  ret_value = list_torrent_contents(torrent_obj)
+sys.exit(ret_value)
