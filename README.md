@@ -67,7 +67,7 @@ Note that `--checkHash` does not check for unneeded files.
 
 ## Command line reference
 
-### Usage: 
+### Syntax
 
 ```
 torrentverify.py -t file.torrent [-d /download_dir/] [options]
@@ -76,15 +76,17 @@ torrentverify.py -t file.torrent [-d /download_dir/] [options]
 If only the torrent file is input with `-t file.torrent` then torrent file contents 
 are listed but no other action is performed.
 
-### Options:
- `-t file.torrent`
+### Options
+* `-t file.torrent`
    Torrent filename.
 
- `-d /download_dir/`
+* `-d /download_dir/`
+
    Directory where torrent is downloaded. Data directory will be the concatenation
    of this directory with the torrent internally reported download directory.
 
- `--otd`
+* `--otd`
+
    Override torrent data directory. Data directory will be the directory specified 
    with -d option and torrent internally reported directory will be ignored.
  
