@@ -405,6 +405,8 @@ def list_torrent_contents(torrent):
   if torrent.num_files > 1:
     print('Torrent directory : {0}'.format(torrent.dir_name))
 
+  return 0
+
 # Checks that files listed in the torrent file exist, and that file size
 # is correct
 # Status can be: OK, MISSING, BAD_SIZE
@@ -957,7 +959,7 @@ if (args.check or args.checkUnneeded or args.checkHash or args.checkFile) \
 
 # --- Check for torrent file existence
 if not os.path.isfile(torrentFileName):
-  print('Torrent file not found : {0}'.format(torrentFileName))
+  print('Torrent file not found: {0}'.format(torrentFileName))
   sys.exit(3)
 
 # --- Read torrent file metadata  
@@ -974,7 +976,7 @@ if data_directory != None:
     torrent_obj.dir_data = os.path.join(data_directory, torrent_obj.dir_name)
   # Check that data directory exists
   if not os.path.isdir(torrent_obj.dir_data):
-    print('Data directory not found : {0}'.format(torrent_obj.dir_data))
+    print('Data directory not found: {0}'.format(torrent_obj.dir_data))
     exit(4)
 
 # --- Decide what to do based on arguments
