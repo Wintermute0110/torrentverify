@@ -879,60 +879,21 @@ def check_torrent_files_single_hash(torrent, fileName):
 
 def do_printHelp():
   print("""\033[32mUsage: torrentverify.py -t file.torrent [-d /download_dir/] [options]\033[0m
-   A small utility written in Python that lists contents of torrent files, deletes
-unneeded files in the torrent downloaded data directory, and checks the torrent 
-downloaded files for errors (either a fast test for file existence and size or a slower, 
-comprehensive test using the SHA1 hash) optionally deleting or truncating wrong size files.
 
-   If only the torrent file is input with -t file.torrent then torrent file contents are 
-listed but no other action is performed.
+If only the torrent file is input with -t file.torrent then torrent file contents 
+are listed but no other action is performed.
 
 \033[32mOptions:
- \033[35m-t\033[0m \033[31mfile.torrent\033[0m
-   Torrent filename.
-
- \033[35m-d\033[0m \033[31m/download_dir/\033[0m
-   Directory where torrent is downloaded. Data directory will be the concatenation
-   of this directory with the torrent internally reported download directory.
-
- \033[35m--otd\033[0m
-   Override torrent data directory. Data directory will be the directory specified 
-   with -d option and torrent internally reported directory will be ignored.
- 
- \033[35m--check\033[0m
-   Checks that all the files listed in the torrent file are in the download directory
-   and that their size is correct. This test is very fast but files having wrong checksum
-   are not detected.
-
- \033[35m--deleteWrongSizeFiles\033[0m
-   Delete files in the torrent download directory whose size is incorrect. Then, you can
-   use your favourite torrent client to recreate (download) them again. Use this option
-   in conjuction with --check.
- 
- \033[35m--truncateWrongSizeFiles\033[0m
-   Truncate files whose size is bigger than it should be. This may solve bugs with some
-   torrent clients, specially when older version of the downloaded files are used as
-   starting point to download a new torrent. Use this option in conjuction with --check.
-   After using this option it is recommended you check the SHA1 with --checkHash to make
-   sure everything is OK with your downloaded files.
-
- \033[35m--checkUnneeded\033[0m
-   Checks the torrent downloaded files and finds files there not belonging to the torrent.
-
- \033[35m--deleteUnneeded\033[0m
-   Deletes unneeded files in the torrent directory. Use this option in conjuction with
-   --checkUnneeded. You will be asked wheter to delete the uneeded files or not for security.
-   WARNING: this option is dangerous! If you specify the wrong directory you may
-   potentially delete all files in you computer!
-
- \033[35m--checkHash\033[0m
-   Checks torrent downloaded files against the SHA1 checksum. This test is slow but reliable. 
-   If some files are padded (have extra bytes at the end of the file) SHA1 will pass
-   but files may be incorrect (see --truncateWrongSizeFiles option).
-
- \033[35m--checkFile\033[0m \033[31mfilename\033[0m
-   Checks a single downloaded file against the SHA1 checksum. You must also specify the
-   torrent download directory with -d and optionally you can use --otd.""")
+\033[35m-t\033[0m \033[31mfile.torrent\033[0m             Torrent filename.
+\033[35m-d\033[0m \033[31m/download_dir/\033[0m           Directory where torrent is downloaded.
+\033[35m--otd\033[0m                       Override torrent data directory.
+\033[35m--check\033[0m                     Quick check of downloaded files.
+\033[35m--truncateWrongSizeFiles\033[0m    Truncate files whose size is bigger than it should be.
+\033[35m--deleteWrongSizeFiles\033[0m      Delete files whose size is incorrect.
+\033[35m--checkUnneeded\033[0m             Finds unneeded files in data directory.
+\033[35m--deleteUnneeded\033[0m            Deletes unneeded files in the data directory.
+\033[35m--checkHash\033[0m                 Checks Torrent data using SHA1 hash.
+\033[35m--checkFile\033[0m \033[31mfile\033[0m            Checks a single downloaded file against the SHA1 checksum.""")
 
 # -----------------------------------------------------------------------------
 # main function
