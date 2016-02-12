@@ -1,7 +1,7 @@
 #!/usr/bin/python3
-#
+
 # Torrentverify
-# Copyright (c) 2015 Wintermute0110 <wintermute0110@gmail.com>
+# Copyright (c) 2015-2016 Wintermute0110 <wintermute0110@gmail.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -54,10 +54,18 @@ class Torrent:
   pieces_hash_list = []
   pieces_file_list = []
 
-# --- Get size of terminal
+# --- Get size of terminal ---
+# shutil.get_terminal_size() only available in Python 3.3
 # https://docs.python.org/3/library/shutil.html#querying-the-size-of-the-output-terminal
-__cols, __lines = shutil.get_terminal_size()
-# print('{0} cols and {1} lines'.format(__cols, __lines))
+# print(sys.version_info)
+if sys.version_info < (3, 3, 0):
+  # Disable long text-line chopping
+  __cols = -1
+  print('[NOTE] Your Python version is lower than 3.3.0. Terminal size cannot be determined.')
+  print('[NOTE] Chopping of long text lines disabled.')
+else:
+  __cols, __lines = shutil.get_terminal_size()
+  # print('{0} cols and {1} lines'.format(__cols, __lines))
 
 # --- Bdecoder ----------------------------------------------------------------
 class DecodingError(Exception):
@@ -206,11 +214,11 @@ def confirm_file_action(action_str, result_str, force_delete):
 
   return (delete_file, force_delete)
 
+# If max_length == -1 it means size of terminal could not be determined. Do
+# nothing witht the string.
 def limit_string_lentgh(string, max_length):
-  if len(string) > max_length:
+  if max_length > 1 and len(string) > max_length:
     string = (string[:max_length-1] + '*');
-  else:
-    string
 
   return string
 
@@ -389,11 +397,12 @@ def list_torrent_contents(torrent):
   print('Printing torrent file contents...')
 
   # --- Print list of files
+  text_size = 7 + 17 + 1
   print('    F#            Bytes  File name')
   print('------ ----------------  --------------')
   for i in range(len(torrent.file_name_list)):
-    print('{0:6} {1:16,}  {2}'
-      .format(i+1, torrent.file_length_list[i], torrent.file_name_list[i]))
+    print('{0:6} {1:16,}  {2}'.format(i+1, torrent.file_length_list[i], \
+      limit_string_lentgh(torrent.file_name_list[i], __cols -text_size)))
 
   # --- Print torrent metadata
   print('')
@@ -540,15 +549,16 @@ def check_torrent_unneeded_files(torrent):
   num_redundant = 0
   num_deleted_files = 0
   force_delete = False
+  text_size = 10
   for i in range(len(file_list)):
     if file_list[i] not in torrent_file_set:
-      print('UNNEEDED  {0}'.format(file_list[i]))
+      print('UNNEEDED  {0}'.format(limit_string_lentgh(file_list[i], __cols -text_size)))
       ret_value = 1
       num_redundant += 1
       
       # --- Deleted unneeded file
       if __prog_options_deleteUnneeded:
-        print('      RM  {0}'.format(file_list[i]))
+        print('      RM  {0}'.format(limit_string_lentgh(file_list[i], __cols -text_size)))
         # This option is very dangerous if user writes the wrong directory
         # Always confirm with user
         delete_file, force_delete = confirm_file_action('Delete', 'deleted', force_delete)
@@ -556,8 +566,9 @@ def check_torrent_unneeded_files(torrent):
           os.unlink(file_list[i])
           num_deleted_files += 1
     else:
-      print('      OK  {0}'.format(file_list[i]))
+      print('      OK  {0}'.format(limit_string_lentgh(file_list[i], __cols -text_size)))
       num_needed += 1
+ 
  
   # --- Print torrent metadata
   print('')
