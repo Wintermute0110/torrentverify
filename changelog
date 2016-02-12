@@ -1,5 +1,12 @@
+torrentverify (0.1.1)
+
+  * Fixed a crash if Python version less than 3.3. If Python is less than that version,
+    chopping of long text lines is disabled.
+
+ -- February 2016
+
 torrentverify (0.1.0)
 
   * Initial release
 
- -- June 2015
+ -- January 2016
