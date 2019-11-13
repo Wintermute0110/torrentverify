@@ -315,7 +315,7 @@ def extract_torrent_metadata(filename):
     torrent.piece_length = t_piece_length
     torrent.num_pieces = num_pieces
     torrent.num_files = 1
-    torrent.file_name_list.append(t_name)
+    torrent.file_name_list.append(t_name.decode("UTF-8"))
     torrent.file_length_list.append(t_length)
     for i in range(num_pieces):
       hash = pieces.read(20)
